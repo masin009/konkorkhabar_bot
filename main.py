@@ -1,225 +1,155 @@
 import os
-import time
 
 from dotenv import load_dotenv
 
 from sources import SOURCES
-
 from collector import get_feed
-
 from filters import is_relevant
-
 from dedup import (
     load_seen,
     save_seen,
     make_id,
     is_duplicate
 )
-
 from formatter import format_news
-
 from telegram_sender import send_message
 
 
-# =========================================
-# Environment
-# =========================================
-
+# Load environment variables
 load_dotenv()
 
-
-BOT_TOKEN = os.getenv(
-    "BOT_TOKEN"
-)
-
-CHANNEL_USERNAME = os.getenv(
-    "CHANNEL_USERNAME"
-)
-
-
-# =========================================
-# Settings
-# =========================================
-
-CHECK_INTERVAL = 300
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@konkorkhabar")
 
 MAX_NEWS_PER_SOURCE = 10
 
 
-# =========================================
-# Validation
-# =========================================
-
 if not BOT_TOKEN:
-
-    raise ValueError(
-        "BOT_TOKEN در فایل .env پیدا نشد."
-    )
-
+    raise ValueError("BOT_TOKEN پیدا نشد.")
 
 if not CHANNEL_USERNAME:
-
-    raise ValueError(
-        "CHANNEL_USERNAME در فایل .env پیدا نشد."
-    )
+    raise ValueError("CHANNEL_USERNAME پیدا نشد.")
 
 
-# =========================================
-# Load database
-# =========================================
+def main():
+    print("=" * 60)
+    print("🤖 Konkorkhabar News Bot")
+    print("🔎 Starting one news collection cycle...")
+    print(f"📤 Destination: {CHANNEL_USERNAME}")
+    print(f"📰 Sources: {len(SOURCES)}")
+    print("=" * 60)
 
-seen = load_seen()
+    seen = load_seen()
 
+    total_checked = 0
+    total_relevant = 0
+    total_published = 0
+    total_duplicate = 0
 
-print("=" * 50)
+    for source in SOURCES:
 
-print(
-    "🤖 Konkorkhabar News Bot Started"
-)
+        print(f"\n🔎 Checking: {source['name']}")
 
-print(
-    f"📤 Destination: {CHANNEL_USERNAME}"
-)
+        try:
+            news_list = get_feed(source)
 
-print(
-    f"📰 Sources: {len(SOURCES)}"
-)
+            if not news_list:
+                print("⚠️ No news received.")
+                continue
 
-print("=" * 50)
+            # Limit the number of items processed from each source
+            news_list = news_list[:MAX_NEWS_PER_SOURCE]
 
+            print(f"📥 Received: {len(news_list)} news")
 
-# =========================================
-# Main Loop
-# =========================================
-
-while True:
-
-    try:
-
-        for source in SOURCES:
-
-            print(
-                f"\n🔎 Checking: {source['name']}"
-            )
-
-            news_list = get_feed(
-                source
-            )
-
-            # فقط جدیدترین موارد
-            news_list = news_list[
-                :MAX_NEWS_PER_SOURCE
-            ]
-
+            # Oldest first → newest last
             for news in reversed(news_list):
 
-                title = news["title"]
+                total_checked += 1
 
+                title = news["title"]
                 summary = news["summary"]
 
-                link = news["link"]
-
-
-                # =================================
+                # -----------------------------
                 # Relevance filter
-                # =================================
-
-                if not is_relevant(
-                    title,
-                    summary
-                ):
-
-                    print(
-                        f"⏭️ Not relevant: {title}"
-                    )
-
+                # -----------------------------
+                if not is_relevant(title, summary):
+                    print(f"⏭️ Irrelevant: {title}")
                     continue
 
+                total_relevant += 1
 
-                # =================================
+                # -----------------------------
                 # Duplicate detection
-                # =================================
-
+                # -----------------------------
                 news_id = make_id(
                     title,
-                    link
+                    news["link"]
                 )
 
-                if is_duplicate(
-                    news_id,
-                    seen
-                ):
-
+                if is_duplicate(news_id, seen):
+                    total_duplicate += 1
+                    print(f"♻️ Duplicate: {title}")
                     continue
 
+                # -----------------------------
+                # Format message
+                # -----------------------------
+                message = format_news(news)
 
-                # =================================
-                # Format
-                # =================================
+                # -----------------------------
+                # Send to Telegram
+                # -----------------------------
+                try:
 
-                message = format_news(
-                    news
-                )
+                    success = send_message(
+                        BOT_TOKEN,
+                        CHANNEL_USERNAME,
+                        message
+                    )
 
+                    if success:
 
-                # =================================
-                # Send Telegram
-                # =================================
+                        print(f"✅ Published: {title}")
 
-                success = send_message(
-                    BOT_TOKEN,
-                    CHANNEL_USERNAME,
-                    message
-                )
+                        seen.add(news_id)
+                        total_published += 1
 
+                    else:
 
-                if success:
+                        print(f"❌ Telegram rejected: {title}")
+
+                except Exception as e:
 
                     print(
-                        f"✅ Published: {title}"
+                        f"❌ Telegram error for "
+                        f"'{title}': {e}"
                     )
 
-                    seen.add(
-                        news_id
-                    )
+                    # Do not mark as seen
+                    # so it can be retried later.
 
-                    save_seen(
-                        seen
-                    )
+        except Exception as e:
 
-                else:
+            print(
+                f"❌ Error while processing "
+                f"{source['name']}: {e}"
+            )
 
-                    print(
-                        f"❌ Failed: {title}"
-                    )
+            # Continue with the next source
+            continue
 
+    # Save database after the whole cycle
+    save_seen(seen)
 
-        print(
-            f"\n💤 Sleeping {CHECK_INTERVAL} seconds..."
-        )
-
-        time.sleep(
-            CHECK_INTERVAL
-        )
-
-
-    except KeyboardInterrupt:
-
-        print(
-            "\n🛑 Bot stopped."
-        )
-
-        break
+    print("\n" + "=" * 60)
+    print("📊 Cycle finished")
+    print(f"🔎 Checked: {total_checked}")
+    print(f"🎯 Relevant: {total_relevant}")
+    print(f"♻️ Duplicates: {total_duplicate}")
+    print(f"📤 Published: {total_published}")
+    print("=" * 60)
 
 
-    except Exception as e:
-
-        print(
-            f"\n❌ Main error: {e}"
-        )
-
-        print(
-            "🔄 Restarting after 30 seconds..."
-        )
-
-        time.sleep(30)
+if __name__ == "__main__":
+    main()
