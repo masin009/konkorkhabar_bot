@@ -1,28 +1,7 @@
-def format_news(news):
+def format_news(ai_text):
 
-    title = news["title"].strip()
+    ai_text = ai_text.strip()
 
-    summary = news["summary"].strip()
-
-    source = news["source"]
-
-    link = news["link"]
-
-    # اگر خلاصه خیلی طولانی باشد
-    if len(summary) > 700:
-
-        summary = summary[:700].rsplit(
-            " ",
-            1
-        )[0] + "..."
-
-    text = f"""🔴 {title}
-
-{summary}
-
-🔗 منبع: {source}
-{link}
+    return f"""{ai_text}
 
 📒 @konkorkhabar"""
-
-    return text
