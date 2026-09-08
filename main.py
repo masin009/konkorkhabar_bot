@@ -177,6 +177,9 @@ def main():
             news_list = get_feed(
                 source
             )
+            print(
+    f"📌 دریافت شد: {len(news_list)} خبر"
+)
 
             news_list = news_list[
                 :MAX_NEWS_PER_SOURCE

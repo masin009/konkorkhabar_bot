@@ -1,6 +1,6 @@
 import requests
 import feedparser
-
+import time
 from bs4 import BeautifulSoup
 
 
@@ -148,69 +148,83 @@ def extract_article_text(url):
 
         return ""
 
-
 def get_feed(source):
 
-    try:
+    retries = 3
 
-        response = requests.get(
-            source["url"],
-            timeout=20,
-            headers=HEADERS
-        )
+    for attempt in range(retries):
 
-        response.raise_for_status()
+        try:
 
-        feed = feedparser.parse(
-            response.content
-        )
-
-        results = []
-
-        for item in feed.entries:
-
-            title = clean_html(
-                item.get("title", "")
+            response = requests.get(
+                source["url"],
+                timeout=20,
+                headers=HEADERS
             )
 
-            summary = clean_html(
-                item.get("summary", "")
+            response.raise_for_status()
+
+            feed = feedparser.parse(
+                response.content
             )
 
-            link = item.get(
-                "link",
-                ""
+            results = []
+
+            for item in feed.entries:
+
+                title = clean_html(
+                    item.get("title", "")
+                )
+
+                summary = clean_html(
+                    item.get("summary", "")
+                )
+
+                link = item.get(
+                    "link",
+                    ""
+                )
+
+                published = item.get(
+                    "published",
+                    ""
+                )
+
+                if not title or not link:
+                    continue
+
+                results.append({
+
+                    "source": source["name"],
+
+                    "title": title,
+
+                    "summary": summary,
+
+                    "link": link,
+
+                    "published": published,
+
+                })
+
+            return results
+
+
+        except Exception as e:
+
+            print(
+                f"⚠️ تلاش {attempt + 1}/{retries} "
+                f"برای {source['name']} ناموفق بود: {e}"
             )
 
-            published = item.get(
-                "published",
-                ""
-            )
+            if attempt < retries - 1:
 
-            if not title or not link:
-                continue
+                time.sleep(5)
 
-            results.append({
 
-                "source": source["name"],
+    print(
+        f"❌ دریافت کامل شکست خورد: "
+        f"{source['name']}"
+    )
 
-                "title": title,
-
-                "summary": summary,
-
-                "link": link,
-
-                "published": published,
-
-            })
-
-        return results
-
-    except Exception as e:
-
-        print(
-            f"❌ خطا در دریافت "
-            f"{source['name']}: {e}"
-        )
-
-        return []
+    return []
