@@ -23,21 +23,29 @@ API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # =========================================================
 
 MAX_ARTICLE_CHARS = 10000
-MAX_OUTPUT_TOKENS = 1000
+MAX_OUTPUT_TOKENS = 1200
 MAX_RETRIES = 3
 
 CONNECT_TIMEOUT = 15
 READ_TIMEOUT = 90
+
+# حداقل طول قابل قبول برای خبر تولیدشده
+MIN_OUTPUT_CHARS = 180
 
 
 # =========================================================
 # Main summarizer
 # =========================================================
 
-def summarize_news(article_text):
+def summarize_news(title, article_text):
+
     """
-    Summarize and rewrite a news article into a clean,
-    natural Persian Telegram news post.
+    Summarize and rewrite an educational news article
+    into a clean Persian Telegram news post.
+
+    Args:
+        title: Original news title
+        article_text: Full article text
 
     Returns:
         str  -> formatted news
@@ -49,153 +57,274 @@ def summarize_news(article_text):
     # -----------------------------------------------------
 
     if not OPENROUTER_API_KEY:
-        print("ERROR: OPENROUTER_API_KEY is not set.")
+
+        print(
+            "ERROR: OPENROUTER_API_KEY is not set."
+        )
+
         return None
+
 
     if not article_text:
-        print("ERROR: article_text is empty.")
+
+        print(
+            "ERROR: article_text is empty."
+        )
+
         return None
 
+
     # -----------------------------------------------------
-    # Limit article size
+    # Prepare article
     # -----------------------------------------------------
+
+    title = title.strip()
 
     article_text = article_text.strip()
 
+
     if len(article_text) > MAX_ARTICLE_CHARS:
+
         article_text = article_text[:MAX_ARTICLE_CHARS]
 
-    # -----------------------------------------------------
-    # Prompt
-    # -----------------------------------------------------
+
+    # =====================================================
+    # SYSTEM PROMPT
+    # =====================================================
 
     system_prompt = """
 تو یک ویراستار حرفه‌ای اخبار آموزشی و دانشگاهی ایران هستی.
 
-وظیفه تو این است که متن خام خبر را بررسی کنی و فقط اطلاعات مهم و قابل انتشار
-آن را به یک خبر کوتاه، روان، طبیعی و حرفه‌ای برای کانال تلگرام تبدیل کنی.
+وظیفه تو این است که عنوان و متن کامل خبر را بررسی کنی و از آن
+یک خبر کوتاه، دقیق، روان و قابل انتشار در کانال تلگرام بسازی.
 
-قوانین بسیار مهم:
+مهم‌ترین هدف:
+خواننده باید بعد از خواندن خروجی بفهمد دقیقاً چه اتفاقی افتاده،
+چه کسی یا چه سازمانی درگیر آن است، چه زمانی اتفاق افتاده یا خواهد افتاد
+و اگر مهلت، عدد، نتیجه یا اقدام خاصی وجود دارد، آن را بداند.
 
-1. مستقیماً متن نهایی خبر را بنویس.
-2. هرگز درباره نحوه نوشتن خبر توضیح نده.
-3. هرگز از عبارت‌هایی مثل این‌ها استفاده نکن:
+قوانین:
+
+1. فقط خبر نهایی را بنویس.
+2. هیچ توضیحی درباره کاری که انجام داده‌ای ننویس.
+3. هرگز ننویس:
    «تیتر:»
    «عنوان:»
    «پاراگراف اول:»
    «پاراگراف دوم:»
-   «متن خبر:»
+   «پاراگراف سوم:»
    «خلاصه:»
+   «متن خبر:»
    «توضیحات:»
-4. خط اول می‌تواند یک تیتر کوتاه و خبری باشد، اما نباید قبل از آن کلمه «تیتر» یا «عنوان» نوشته شود.
-5. بعد از تیتر، متن خبر را به صورت طبیعی و یکپارچه بنویس.
-6. فقط مهم‌ترین اطلاعات خبر را نگه دار.
-7. از توضیحات اضافه، حاشیه، تبلیغات و جملات تکراری صرف‌نظر کن.
-8. تاریخ‌ها، ساعت‌ها، مهلت‌ها، اعداد، نتایج، نام دانشگاه‌ها، سازمان‌ها،
-   آزمون‌ها و سایر اطلاعات مهم را دقیق حفظ کن.
-9. هیچ اطلاعاتی را که در متن اصلی وجود ندارد اختراع نکن.
-10. معنی خبر را تغییر نده.
-11. متن باید فارسی روان و طبیعی باشد و حالت رباتی نداشته باشد.
-12. از جمله‌های کوتاه و قابل خواندن در تلگرام استفاده کن.
-13. در صورت مرتبط بودن، از ایموجی مناسب استفاده کن.
-14. در کل خبر بیشتر از 2 تا 4 ایموجی استفاده نکن.
-15. ایموجی باید متناسب با موضوع باشد، مانند:
-    🎓 برای دانشگاه و آموزش
-    📝 برای آزمون و ثبت‌نام
-    📚 برای آموزش و امتحان
-    ⏰ برای مهلت و زمان
-    📊 برای نتایج و آمار
-    📢 برای اطلاعیه مهم
-16. از Markdown استفاده نکن.
-17. هرگز از این موارد استفاده نکن:
+   «خبر:»
+
+4. خط اول یک تیتر کوتاه و خبری باشد.
+5. قبل از تیتر یک ایموجی خبری مناسب قرار بده.
+
+نمونه:
+🔴 تغییرات جدید کنکور ابلاغ شد
+
+یا:
+📢 نتایج آزمون کارشناسی ارشد ۱۴۰۵ اعلام شد
+
+6. بعد از تیتر، حداقل 2 پاراگراف کوتاه و مفید بنویس؛
+   مگر اینکه متن اصلی واقعاً اطلاعات کافی برای دو پاراگراف نداشته باشد.
+
+7. هر پاراگراف باید حداقل یک نکته واقعی و مهم از خبر را منتقل کند.
+8. هیچ پاراگرافی نباید فقط یک یا چند کلمه باشد.
+9. خروجی نباید فقط شامل تیتر و یک عبارت کوتاه باشد.
+10. از متن اصلی اطلاعات واقعی استخراج کن و آن‌ها را خلاصه و روان کن.
+
+11. در صورت وجود، این اطلاعات را حتماً حفظ کن:
+    - تاریخ
+    - ساعت
+    - مهلت
+    - مبلغ
+    - تعداد
+    - درصد
+    - رتبه
+    - نتیجه
+    - نام آزمون
+    - نام دانشگاه
+    - نام سازمان
+    - شرایط ثبت‌نام
+    - نحوه اقدام
+    - تصمیم یا تغییر مهم
+
+12. اگر متن درباره یک تصمیم یا تغییر جدید است،
+    دقیقاً توضیح بده چه چیزی تغییر کرده است.
+
+13. اگر خبر درباره نتایج است،
+    مشخص کن چه نتیجه‌ای اعلام شده و مربوط به چه آزمونی است.
+
+14. اگر خبر درباره ثبت‌نام یا مهلت است،
+    مهلت و اقدام موردنیاز داوطلب را حتماً بیاور.
+
+15. اگر خبر درباره دانشگاه یا مدرسه است،
+    مشخص کن چه دانشگاه یا مدرسه‌ای و چه اتفاقی درباره آن افتاده است.
+
+16. اطلاعات مهم را حذف نکن فقط برای اینکه خبر کوتاه‌تر شود.
+
+17. در عین حال متن را بیش از حد طولانی نکن.
+18. معمولاً 2 تا 4 پاراگراف کوتاه کافی است.
+19. هر پاراگراف حدود 1 تا 3 جمله باشد.
+
+20. هیچ اطلاعاتی را اختراع نکن.
+21. از حدس زدن خودداری کن.
+22. معنی خبر را تغییر نده.
+
+23. متن فارسی طبیعی و حرفه‌ای باشد.
+24. از جملات ماشینی و رباتی استفاده نکن.
+
+25. برای مرتب شدن خبر، ابتدای هر پاراگراف یک ایموجی مناسب قرار بده.
+
+برای نمونه:
+🔹 اطلاعات اصلی خبر
+
+📌 جزئیات مهم
+
+⏰ تاریخ یا مهلت
+
+📊 نتیجه یا آمار
+
+🎓 اطلاعات مربوط به دانشگاه
+
+📝 اطلاعات مربوط به آزمون یا ثبت‌نام
+
+🏫 اطلاعات مربوط به مدرسه
+
+26. ایموجی‌ها را متناسب با محتوای هر پاراگراف انتخاب کن.
+27. در مجموع حدود 3 تا 6 ایموجی کافی است.
+28. از ایموجی‌های بی‌ربط استفاده نکن.
+
+29. از Markdown استفاده نکن.
+30. هرگز از این موارد استفاده نکن:
     **
     __
     #
     *
     `
     ```
-18. هیچ لینک، آدرس سایت یا منبع خبر را در خروجی قرار نده.
-19. نام رسانه یا کانال منتشرکننده خبر را نیز در خروجی نیاور.
-20. عبارت‌های رباتی و توضیحات متا مانند
-    «در این خبر آمده است»،
-    «خبر فوق بیان می‌کند»،
-    «خلاصه خبر به شرح زیر است»
-    و موارد مشابه را استفاده نکن.
-21. خروجی معمولاً شامل یک تیتر کوتاه و 1 تا 4 پاراگراف کوتاه باشد.
-22. اگر خبر طولانی است، فقط اطلاعات مهم آن را انتخاب و خلاصه کن.
-23. اگر متن تبلیغاتی، نامرتبط، ناقص یا غیرقابل اعتماد است، فقط بنویس:
+
+31. لینک، آدرس سایت یا URL در خروجی قرار نده.
+32. نام رسانه یا کانال منبع را در خروجی قرار نده.
+33. تبلیغات، جملات تبلیغاتی و حاشیه‌ها را حذف کن.
+
+34. اگر متن واقعاً نامرتبط، تبلیغاتی، ناقص یا غیرقابل اعتماد است،
+    فقط بنویس:
     SKIP
-24. اگر خبر درباره موضوعات آموزشی، کنکور، آزمون، دانشگاه، مدرسه،
-    آموزش و پرورش، سوابق تحصیلی، معدل، انتخاب رشته یا موضوعات مرتبط است،
-    آن را به شکل یک خبر تمیز و قابل انتشار بازنویسی کن.
-25. خروجی باید فقط خود خبر نهایی باشد و هیچ توضیح دیگری خارج از خبر نداشته باشد.
 
-نمونه سبک خروجی:
+35. اگر خبر آموزشی و قابل انتشار است،
+    حتماً یک خبر کامل و قابل فهم تولید کن.
 
-🎓 نتایج اولیه آزمون کارشناسی ارشد ۱۴۰۵ اعلام شد
-
-نتایج اولیه آزمون کارشناسی ارشد سال ۱۴۰۵ منتشر شد. داوطلبان می‌توانند
-با مراجعه به سامانه مربوطه، نتیجه آزمون خود را مشاهده کنند.
-
-مهلت و جزئیات انتخاب رشته نیز در اطلاعیه سازمان سنجش اعلام شده است.
-
-دقت کن که این فقط نمونه سبک است و نباید اطلاعات آن را به خبرهای دیگر اضافه کنی.
+36. خروجی باید فقط خبر نهایی باشد.
 """
 
 
-    user_prompt = f"""
-متن خبر خام:
+    # =====================================================
+    # USER PROMPT
+    # =====================================================
 
---------------------
+    user_prompt = f"""
+عنوان اصلی خبر:
+
+{title}
+
+
+متن کامل خبر:
+
+--------------------------------------------------
 
 {article_text}
 
---------------------
+--------------------------------------------------
 
-اکنون خبر را بررسی کن و فقط نسخه نهایی و تمیز آن را بنویس.
+اکنون این خبر را بررسی کن.
 
-اگر خبر ارزش انتشار ندارد یا اطلاعات آن برای تهیه یک خبر قابل اعتماد کافی نیست،
-فقط بنویس:
+ابتدا مهم‌ترین اتفاق یا موضوع خبر را تشخیص بده.
+
+سپس یک خبر کوتاه و کامل برای تلگرام بنویس.
+
+ساختار خروجی:
+
+خط اول:
+یک تیتر خبری کوتاه با یک ایموجی مناسب.
+
+بعد:
+حداقل دو پاراگراف کوتاه که هرکدام یک بخش مهم از خبر را توضیح دهند.
+
+حتماً مشخص کن:
+چه اتفاقی افتاده؟
+چه شخص، سازمان، دانشگاه یا آزمونی درگیر است؟
+اگر تاریخ، مهلت، عدد، نتیجه یا اقدام خاصی وجود دارد، چیست؟
+
+از اطلاعات خود متن استفاده کن و هیچ چیزی را حدس نزن.
+
+خروجی نباید فقط تیتر باشد.
+خروجی نباید شامل توضیحاتی مثل «تیتر»، «پاراگراف اول» و غیره باشد.
+
+اگر خبر ارزش انتشار ندارد، فقط بنویس:
 
 SKIP
 """
 
-    # -----------------------------------------------------
-    # Request payload
-    # -----------------------------------------------------
+
+    # =====================================================
+    # PAYLOAD
+    # =====================================================
 
     payload = {
+
         "model": OPENROUTER_MODEL,
+
         "messages": [
+
             {
                 "role": "system",
                 "content": system_prompt
             },
+
             {
                 "role": "user",
                 "content": user_prompt
             }
+
         ],
-        "temperature": 0.2,
+
+        "temperature": 0.15,
+
         "max_tokens": MAX_OUTPUT_TOKENS
     }
 
-    # -----------------------------------------------------
-    # Headers
-    # -----------------------------------------------------
+
+    # =====================================================
+    # HEADERS
+    # =====================================================
 
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/masin009/konkorkhabar_bot",
-        "X-Title": "Konkorkhabar News Bot"
+
+        "Authorization":
+            f"Bearer {OPENROUTER_API_KEY}",
+
+        "Content-Type":
+            "application/json",
+
+        "HTTP-Referer":
+            "https://github.com/masin009/konkorkhabar_bot",
+
+        "X-Title":
+            "Konkorkhabar News Bot"
     }
 
+
     # =====================================================
-    # Retry loop
+    # RETRY LOOP
     # =====================================================
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(
+        1,
+        MAX_RETRIES + 1
+    ):
 
         try:
 
@@ -204,24 +333,35 @@ SKIP
                 f"(attempt {attempt}/{MAX_RETRIES})..."
             )
 
+
             response = requests.post(
+
                 API_URL,
+
                 headers=headers,
+
                 json=payload,
-                timeout=(CONNECT_TIMEOUT, READ_TIMEOUT)
+
+                timeout=(
+                    CONNECT_TIMEOUT,
+                    READ_TIMEOUT
+                )
             )
 
+
             # -------------------------------------------------
-            # HTTP errors
+            # Temporary errors
             # -------------------------------------------------
 
             if response.status_code in {
+
                 408,
                 429,
                 500,
                 502,
                 503,
                 504
+
             }:
 
                 print(
@@ -229,20 +369,25 @@ SKIP
                     f"HTTP {response.status_code}"
                 )
 
+
                 if attempt < MAX_RETRIES:
 
                     wait_time = 5 * attempt
 
                     print(
-                        f"Retrying in {wait_time} seconds..."
+                        f"Retrying in "
+                        f"{wait_time} seconds..."
                     )
 
-                    time.sleep(wait_time)
+                    time.sleep(
+                        wait_time
+                    )
 
                     continue
 
-                print("OpenRouter failed after retries.")
+
                 return None
+
 
             # -------------------------------------------------
             # Other HTTP errors
@@ -256,47 +401,76 @@ SKIP
                 )
 
                 try:
-                    print(response.text[:1000])
+
+                    print(
+                        response.text[:1000]
+                    )
+
                 except Exception:
+
                     pass
 
                 return None
 
+
             # -------------------------------------------------
-            # Parse JSON
+            # JSON
             # -------------------------------------------------
 
             try:
+
                 data = response.json()
 
             except ValueError:
 
-                print("ERROR: OpenRouter returned invalid JSON.")
+                print(
+                    "ERROR: OpenRouter returned invalid JSON."
+                )
+
                 return None
 
+
             # -------------------------------------------------
-            # Validate response
+            # Choices
             # -------------------------------------------------
 
-            choices = data.get("choices")
+            choices = data.get(
+                "choices"
+            )
+
 
             if not choices:
 
-                print("ERROR: OpenRouter returned no choices.")
+                print(
+                    "ERROR: OpenRouter returned no choices."
+                )
+
                 print(data)
 
                 return None
 
+
             choice = choices[0]
 
-            message = choice.get("message", {})
 
-            content = message.get("content")
+            message = choice.get(
+                "message",
+                {}
+            )
 
-            finish_reason = choice.get("finish_reason")
+
+            content = message.get(
+                "content"
+            )
+
+
+            finish_reason = choice.get(
+                "finish_reason"
+            )
+
 
             # -------------------------------------------------
-            # Empty content
+            # Empty response
             # -------------------------------------------------
 
             if not content:
@@ -306,14 +480,17 @@ SKIP
                 )
 
                 print(
-                    f"finish_reason: {finish_reason}"
+                    f"finish_reason: "
+                    f"{finish_reason}"
                 )
+
 
                 if finish_reason == "length":
 
                     print(
-                        "The model reached the output token limit."
+                        "Model reached output token limit."
                     )
+
 
                     if attempt < MAX_RETRIES:
 
@@ -321,25 +498,48 @@ SKIP
 
                         continue
 
+
                 return None
 
-            # -------------------------------------------------
-            # Clean output
-            # -------------------------------------------------
+
+            # =================================================
+            # CLEAN OUTPUT
+            # =================================================
 
             text = content.strip()
 
-            # Remove Markdown accidentally generated by model
-            text = text.replace("**", "")
-            text = text.replace("__", "")
-            text = text.replace("```", "")
-            text = text.replace("`", "")
+
+            # -------------------------------------------------
+            # Remove Markdown
+            # -------------------------------------------------
+
+            text = text.replace(
+                "**",
+                ""
+            )
+
+            text = text.replace(
+                "__",
+                ""
+            )
+
+            text = text.replace(
+                "```",
+                ""
+            )
+
+            text = text.replace(
+                "`",
+                ""
+            )
+
 
             # -------------------------------------------------
             # Remove unwanted labels
             # -------------------------------------------------
 
             forbidden_labels = [
+
                 "تیتر:",
                 "عنوان:",
                 "پاراگراف:",
@@ -354,12 +554,18 @@ SKIP
                 "خبر:",
             ]
 
-            for label in forbidden_labels:
-                text = text.replace(label, "")
 
-            # -------------------------------------------------
-            # Normalize excessive blank lines
-            # -------------------------------------------------
+            for label in forbidden_labels:
+
+                text = text.replace(
+                    label,
+                    ""
+                )
+
+
+            # =================================================
+            # NORMALIZE LINES
+            # =================================================
 
             lines = text.splitlines()
 
@@ -367,69 +573,121 @@ SKIP
 
             previous_empty = False
 
+
             for line in lines:
 
                 line = line.strip()
 
+
                 if not line:
 
                     if not previous_empty:
+
                         cleaned_lines.append("")
 
                     previous_empty = True
 
                 else:
 
-                    cleaned_lines.append(line)
+                    cleaned_lines.append(
+                        line
+                    )
 
                     previous_empty = False
 
-            text = "\n".join(cleaned_lines).strip()
 
-            # -------------------------------------------------
-            # Check SKIP
-            # -------------------------------------------------
+            text = "\n".join(
+                cleaned_lines
+            ).strip()
+
+
+            # =================================================
+            # CHECK SKIP
+            # =================================================
 
             if text.upper() == "SKIP":
 
-                print("AI decided to skip this news.")
-                return None
-
-            # -------------------------------------------------
-            # Remove accidental SKIP around text
-            # -------------------------------------------------
-
-            if text.startswith("SKIP"):
-
-                remaining = text[4:].strip()
-
-                if not remaining:
-
-                    print("AI decided to skip this news.")
-                    return None
-
-            # -------------------------------------------------
-            # Final validation
-            # -------------------------------------------------
-
-            if len(text) < 20:
-
                 print(
-                    "ERROR: Generated news is too short."
+                    "AI decided to skip this news."
                 )
 
                 return None
 
+
+            # =================================================
+            # QUALITY CHECK
+            # =================================================
+
+            # اگر خروجی خیلی کوتاه باشد، منتشر نشود
+            if len(text) < MIN_OUTPUT_CHARS:
+
+                print(
+                    f"⚠️ AI output too short: "
+                    f"{len(text)} characters"
+                )
+
+                print(
+                    "⏭️ Skipping this candidate."
+                )
+
+                return None
+
+
             # -------------------------------------------------
-            # Success
+            # Check whether output contains only a title
             # -------------------------------------------------
 
-            print("News summarized successfully.")
+            output_lines = [
+
+                line.strip()
+
+                for line in text.splitlines()
+
+                if line.strip()
+            ]
+
+
+            if len(output_lines) < 3:
+
+                print(
+                    "⚠️ AI output does not contain enough "
+                    "news content."
+                )
+
+                print(
+                    "⏭️ Skipping this candidate."
+                )
+
+                return None
+
+
+            # -------------------------------------------------
+            # Print successful output
+            # -------------------------------------------------
+
+            print(
+                "News summarized successfully."
+            )
+
+
+            print(
+                "\n----- AI OUTPUT -----"
+            )
+
+
+            print(text)
+
+
+            print(
+                "---------------------\n"
+            )
+
 
             return text
 
+
         # =====================================================
-        # Request exception
+        # REQUEST EXCEPTION
         # =====================================================
 
         except requests.exceptions.RequestException as e:
@@ -438,26 +696,34 @@ SKIP
                 f"OpenRouter request exception: {e}"
             )
 
+
             if attempt < MAX_RETRIES:
 
                 wait_time = 5 * attempt
 
                 print(
-                    f"Retrying in {wait_time} seconds..."
+                    f"Retrying in "
+                    f"{wait_time} seconds..."
                 )
 
-                time.sleep(wait_time)
+
+                time.sleep(
+                    wait_time
+                )
 
                 continue
 
+
             print(
-                "OpenRouter request failed after retries."
+                "OpenRouter request failed "
+                "after retries."
             )
 
             return None
 
+
         # =====================================================
-        # Unexpected errors
+        # OTHER ERRORS
         # =====================================================
 
         except RuntimeError as e:
@@ -468,6 +734,7 @@ SKIP
 
             return None
 
+
         except ValueError as e:
 
             print(
@@ -476,6 +743,7 @@ SKIP
 
             return None
 
+
         except Exception as e:
 
             print(
@@ -483,5 +751,6 @@ SKIP
             )
 
             return None
+
 
     return None
