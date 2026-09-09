@@ -39,7 +39,7 @@ jobs:
       - name: Run news bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CHANNEL_USERNAME: "@konkorkhabar"
 
         run: |
