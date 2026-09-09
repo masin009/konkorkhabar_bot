@@ -41,6 +41,10 @@ CHANNEL_USERNAME = os.getenv(
 MAX_NEWS_PER_SOURCE = 10
 
 
+# -------------------------------------------------
+# CHECK ENVIRONMENT VARIABLES
+# -------------------------------------------------
+
 if not BOT_TOKEN:
 
     raise ValueError(
@@ -49,11 +53,11 @@ if not BOT_TOKEN:
 
 
 if not os.getenv(
-    "GEMINI_API_KEY"
+    "OPENROUTER_API_KEY"
 ):
 
     raise ValueError(
-        "GEMINI_API_KEY پیدا نشد."
+        "OPENROUTER_API_KEY پیدا نشد."
     )
 
 
@@ -177,9 +181,11 @@ def main():
             news_list = get_feed(
                 source
             )
+
             print(
-    f"📌 دریافت شد: {len(news_list)} خبر"
-)
+                f"📌 دریافت شد: "
+                f"{len(news_list)} خبر"
+            )
 
             news_list = news_list[
                 :MAX_NEWS_PER_SOURCE
@@ -197,6 +203,10 @@ def main():
                 )
 
 
+                # -----------------------------------------
+                # DUPLICATE CHECK
+                # -----------------------------------------
+
                 if is_duplicate(
                     news_id,
                     seen
@@ -204,6 +214,10 @@ def main():
 
                     continue
 
+
+                # -----------------------------------------
+                # RELEVANCE CHECK
+                # -----------------------------------------
 
                 if not is_relevant(
                     title,
@@ -236,6 +250,10 @@ def main():
                 f"{source['name']}: {e}"
             )
 
+
+    # -------------------------------------------------
+    # NO CANDIDATES
+    # -------------------------------------------------
 
     if not candidates:
 
@@ -303,7 +321,7 @@ def main():
 
 
         # ---------------------------------------------
-        # AI SUMMARY
+        # AI SUMMARY - OPENROUTER
         # ---------------------------------------------
 
         try:
@@ -316,7 +334,7 @@ def main():
         except Exception as e:
 
             print(
-                f"❌ Gemini error: {e}"
+                f"❌ OpenRouter error: {e}"
             )
 
             continue
@@ -349,7 +367,7 @@ def main():
 
 
         # ---------------------------------------------
-        # SEND
+        # SEND TO TELEGRAM
         # ---------------------------------------------
 
         try:
